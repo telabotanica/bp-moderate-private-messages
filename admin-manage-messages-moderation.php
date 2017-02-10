@@ -50,6 +50,9 @@ function bp_mpm_moderated_messages_options() {
 	if( isset($_POST[BP_MPM_OPTIONS_HIDDEN_VALIDATION_FIELD_NAME]) && $_POST[BP_MPM_OPTIONS_HIDDEN_VALIDATION_FIELD_NAME] == 'Y' ) {
 		// update option value
 		update_option(BP_MPM_OPTION_RECIPIENTS_LIMIT, $_POST[BP_MPM_OPTION_RECIPIENTS_LIMIT]);
+		update_option(BP_MPM_OPTION_NOTIFY_WHEN_QUEUED, (isset($_POST[BP_MPM_OPTION_NOTIFY_WHEN_QUEUED]) ? '1' : '0'));
+		update_option(BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED, (isset($_POST[BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED]) ? '1' : '0'));
+		update_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED, (isset($_POST[BP_MPM_OPTION_NOTIFY_WHEN_REJECTED]) ? '1' : '0'));
 		?>
 		<div class="updated"><p><strong>Options mises à jour</strong></p></div>
 		<?php
@@ -57,6 +60,9 @@ function bp_mpm_moderated_messages_options() {
 
 	// get current options values
 	$recipients_limit = get_option(BP_MPM_OPTION_RECIPIENTS_LIMIT);
+	$notify_when_queued = get_option(BP_MPM_OPTION_NOTIFY_WHEN_QUEUED);
+	$notify_when_accepted = get_option(BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED);
+	$notify_when_rejected = get_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED);
 
 	?>
 	<div class="wrap">
@@ -92,6 +98,50 @@ function bp_mpm_moderated_messages_options() {
 								<?php _e('Moderation will be applied to any message sent to a number of recipients exceeding the number above', 'bp-moderate-private-messages') ?>
 								<br>
 								<?php _e('Set to 1 to moderate all messages, leave empty or set to 0 to disable moderation', 'bp-moderate-private-messages') ?>
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">
+							<label for="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_QUEUED ?>">
+								<?php _e('Notification options', 'bp-moderate-private-messages') ?>
+							</label>
+						</th>
+						<td>
+							<label>
+								<input type="checkbox"
+									id="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_QUEUED ?>"
+									name="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_QUEUED ?>"
+									<?php echo $notify_when_queued ? ' checked="checked"' : '' ?>
+								/>
+								Notify when queued
+							</label>
+							<p class="description">
+								<?php _e('Notify the sender when a message was queued for moderation', 'bp-moderate-private-messages') ?>
+							</p>
+							<br>
+							<label>
+								<input type="checkbox"
+									id="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED ?>"
+									name="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED ?>"
+									<?php echo $notify_when_accepted ? ' checked="checked"' : '' ?>
+								/>
+								Notify when accepted
+							</label>
+							<p class="description">
+								<?php _e('Notify the sender when a message was accpeted', 'bp-moderate-private-messages') ?>
+							</p>
+							<br>
+							<label>
+								<input type="checkbox"
+									id="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_REJECTED ?>"
+									name="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_REJECTED ?>"
+									<?php echo $notify_when_rejected ? ' checked="checked"' : '' ?>
+								/>
+								Notify when rejected
+							</label>
+							<p class="description">
+								<?php _e('Notify the sender when a message was rejected', 'bp-moderate-private-messages') ?>
 							</p>
 						</td>
 					</tr>
