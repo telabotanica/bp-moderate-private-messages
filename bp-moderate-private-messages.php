@@ -15,6 +15,9 @@
  */
 
 const BP_MPM_OPTION_RECIPIENTS_LIMIT = 'bp_mpm_recipients_limit';
+const BP_MPM_OPTION_NOTIFY_WHEN_QUEUED = 'bp_mpm_notify_when_queued';
+const BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED = 'bp_mpm_notify_when_accepted';
+const BP_MPM_OPTION_NOTIFY_WHEN_REJECTED = 'bp_mpm_notify_when_rejected';
 const BP_MPM_MODERATED_MESSAGES_TABLE_NAME = 'bp_messages_moderated';
 const BP_MPM_DEFAULT_RECIPIENTS_LIMIT = 10;
 
@@ -75,6 +78,20 @@ function bp_mpm_init_db() {
 	if ($recipients_limit === false) {
 		add_option(BP_MPM_OPTION_RECIPIENTS_LIMIT, BP_MPM_DEFAULT_RECIPIENTS_LIMIT);
 	}
+	// using === should prevent confusing the option being not set with the
+	// option being set to "0"
+	$notify_when_queued = get_option(BP_MPM_OPTION_NOTIFY_WHEN_QUEUED);
+	if ($notify_when_queued === false) {
+		add_option(BP_MPM_OPTION_NOTIFY_WHEN_QUEUED, "1");
+	}
+	$notify_when_accepted = get_option(BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED);
+	if ($notify_when_accepted === false) {
+		add_option(BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED, "1");
+	}
+	$notify_when_rejected = get_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED);
+	if ($notify_when_rejected === false) {
+		add_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED, "1");
+	}
 }
 
 /**
@@ -122,6 +139,7 @@ function bp_mpm_moderate_before_save(&$message) {
 		$message->message,
 		$message->date_sent
 	));
+	$queued_message_id = $wpdb->insert_id;
 
 	// B. Modify current message and send it to all superadmins
 	// 1. add an explicit prefix to the subject
@@ -144,8 +162,8 @@ function bp_mpm_moderate_before_save(&$message) {
 	$message->recipients = $super_admins_recipients;
 
 	// 3. add moderation link and instructions before original message contents
-	$accept_link = '[lien acceptation]';
-	$reject_link = '[lien rejet]';
+	$accept_link = admin_url() . 'admin.php?page=bp-moderate-private-messages&id=' . $queued_message_id . '&action=accept';
+	$reject_link = admin_url() . 'admin.php?page=bp-moderate-private-messages&id=' . $queued_message_id . '&action=reject';
 	$sender = new WP_User($message->sender_id);
 	//var_dump($sender);
 	$new_message_contents = '';
@@ -178,6 +196,107 @@ function bp_mpm_moderate_before_save(&$message) {
 	// overwrite
 	$message->message = $new_message_contents;
 
+	// C. Notifications
+	// shall we notify sender that a message was queud for moderation ?
+	$notify_when_queued = get_option(BP_MPM_OPTION_NOTIFY_WHEN_QUEUED);
+	if ($notify_when_queued) {
+		bp_notifications_add_notification(array(
+			'user_id'           => $message->sender_id,
+			'item_id'           => $queued_message_id,
+			'component_name'    => 'bp-moderate-private-messages',
+			'component_action'  => 'bp_mpm_messages_queued_for_moderation',
+			'date_notified'     => bp_core_current_time(),
+			'is_new'            => 1,
+		));
+	}
+	// no need to notify the superadmins; the moderation message sent to them
+	// generates a notification
+
 	//echo "Message bricolé: <pre>"; var_dump($message); echo "</pre><br><br>";
 	//exit;
 }
+
+/**
+ * Registers a new "component" for notifications :
+ * 
+ * Taken from :
+ * https://webdevstudios.com/2015/10/06/buddypress-adding-custom-notifications/
+ */
+function bp_mpm_custom_filter_notifications_get_registered_components($component_names = array()) {
+	// Force $component_names to be an array
+	if (! is_array($component_names)) {
+		$component_names = array();
+	}
+	// Add 'custom' component to registered components array
+	array_push($component_names, 'bp-moderate-private-messages');
+	// Return component's with 'custom' appended
+	return $component_names;
+}
+add_filter('bp_notifications_get_registered_components', 'bp_mpm_custom_filter_notifications_get_registered_components');
+
+/**
+ * Registers new notification types :
+ *  - to inform the sender that a message was queued for moderation
+ *  - to inform the sender that a message was accepted
+ *  - to inform the sender that a message was rejected
+ * 
+ * Taken from :
+ * https://webdevstudios.com/2015/10/06/buddypress-adding-custom-notifications/
+ */
+function bp_mpm_custom_format_buddypress_notifications($action, $item_id, $secondary_item_id, $total_items, $format, $component_action_name, $component_name, $id) {
+	// common task: fetch moderated message subject from db
+	if (in_array($component_action_name, array('bp_mpm_messages_queued_for_moderation', 'bp_mpm_messages_accepted', 'bp_mpm_messages_rejected'))) {
+		global $wpdb;
+		$message_subject = $wpdb->get_col(
+			"SELECT subject FROM {$wpdb->prefix}" . BP_MPM_MODERATED_MESSAGES_TABLE_NAME
+			. " WHERE id = $item_id;"
+		);
+		$message_subject = $message_subject[0];
+		// truncate subject if too long
+		if (strlen($message_subject) > 40) {
+			$message_subject = substr($message_subject, 0, 37) . '...';
+		}
+	}
+
+	// New custom notification : a message was queued for moderation
+	if ('bp_mpm_messages_queued_for_moderation' === $component_action_name) {
+		$custom_text = sprintf(__('Your message [%s] was queued for moderation', 'bp-moderate-private-messages'), $message_subject);
+		// WordPress Toolbar
+		if ('string' === $format) {
+			return $custom_text;
+		// Deprecated BuddyBar
+		} else {
+			return array(
+				'text' => $custom_text
+			);
+		}
+	}
+	// New custom notification : a message was accepted
+	elseif ('bp_mpm_messages_accepted' === $component_action_name) {
+		$custom_text = sprintf(__('Your message [%s] was accepted and sent to its recipients', 'bp-moderate-private-messages'), $message_subject);
+		// WordPress Toolbar
+		if ('string' === $format) {
+			return $custom_text;
+		// Deprecated BuddyBar
+		} else {
+			return array(
+				'text' => $custom_text
+			);
+		}
+	}
+	// New custom notification : a message was rejected
+	elseif ('bp_mpm_messages_rejected' === $component_action_name) {
+		$custom_text = sprintf(__('Your message [%s] was rejected', 'bp-moderate-private-messages'), $message_subject);
+		// WordPress Toolbar
+		if ('string' === $format) {
+			return $custom_text;
+		// Deprecated BuddyBar
+		} else {
+			return array(
+				'text' => $custom_text
+			);
+		}
+	}
+	return $action;
+}
+add_filter('bp_notifications_get_notifications_for_user', 'bp_mpm_custom_format_buddypress_notifications', 10, 8);
