@@ -18,6 +18,7 @@ const BP_MPM_OPTION_RECIPIENTS_LIMIT = 'bp_mpm_recipients_limit';
 const BP_MPM_OPTION_NOTIFY_WHEN_QUEUED = 'bp_mpm_notify_when_queued';
 const BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED = 'bp_mpm_notify_when_accepted';
 const BP_MPM_OPTION_NOTIFY_WHEN_REJECTED = 'bp_mpm_notify_when_rejected';
+const BP_MPM_OPTION_SOFT_DELETE = 'bp_mpm_soft_delete';
 const BP_MPM_MODERATED_MESSAGES_TABLE_NAME = 'bp_messages_moderated';
 const BP_MPM_DEFAULT_RECIPIENTS_LIMIT = 10;
 
@@ -63,9 +64,11 @@ function bp_mpm_init_db() {
 			`id` bigint(20) NOT NULL AUTO_INCREMENT,
 			`thread_id` bigint(20) NOT NULL,
 			`sender_id` bigint(20) NOT NULL,
+			`recipients` text NOT NULL,
 			`subject` varchar(200) NOT NULL,
 			`message` longtext NOT NULL,
 			`date_sent` datetime NOT NULL,
+			`deleted` tinyint(1) NOT NULL,
 			PRIMARY KEY (`id`),
 			KEY `sender_id` (`sender_id`),
 			KEY `thread_id` (`thread_id`)
@@ -92,10 +95,15 @@ function bp_mpm_init_db() {
 	if ($notify_when_rejected === false) {
 		add_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED, "1");
 	}
+	$soft_delete = get_option(BP_MPM_OPTION_SOFT_DELETE);
+	if ($soft_delete === false) {
+		add_option(BP_MPM_OPTION_SOFT_DELETE, "1");
+	}
 }
 
 /**
- * Drops the moderated messages table, removes the config options
+ * Drops the moderated messages table, removes the config options, removes the
+ * notifications
  */
 function bp_mpm_clean_db() {
 	// remove plugin-specific table(s)
@@ -104,6 +112,10 @@ function bp_mpm_clean_db() {
 
 	// clean wp_options table
 	delete_option(BP_MPM_OPTION_RECIPIENTS_LIMIT);
+
+	// delete notifications to prevent incorrect formatting due to absence of
+	// moderated messages data
+	$wpdb->query("DELETE FROM {$wpdb->prefix}bp_notifications WHERE component_name = 'bp-moderate-private-messages';");
 }
 
 /**
@@ -114,12 +126,10 @@ function bp_mpm_clean_db() {
  * @param $message object reference passed by BP_Messages_Message::send()
  */
 function bp_mpm_moderate_before_save(&$message) {
-	// superadmins bypass moderation
+	// superadmins are not affected by moderation
 	if (is_super_admin()) {
 		return;
 	}
-
-	//echo "Ça modère sa mémé : <pre>"; var_dump($message); echo "</pre><br><br>";
 
 	// do we need moderation ?
 	$recipients_limit = get_option(BP_MPM_OPTION_RECIPIENTS_LIMIT);
@@ -131,10 +141,18 @@ function bp_mpm_moderate_before_save(&$message) {
 
 	// A. Save message in moderated messages table
 	global $wpdb;
+	// formatting recipients
+	$recipients = array();
+	foreach($message->recipients as $recipient) {
+		$array_recipient = (array)$recipient;
+		$recipients[] = array_pop($array_recipient);
+	}
+	// insert
 	$wpdb->query($wpdb->prepare(
-		"INSERT INTO {$wpdb->prefix}" . BP_MPM_MODERATED_MESSAGES_TABLE_NAME . " VALUES(DEFAULT, %d, %d, %s, %s, %s);",
+		"INSERT INTO {$wpdb->prefix}" . BP_MPM_MODERATED_MESSAGES_TABLE_NAME . " VALUES(DEFAULT, %d, %d, %s, %s, %s, %s, 0);",
 		($message->thread_id ? $message->thread_id : "''"),
 		$message->sender_id,
+		implode(',', $recipients),
 		$message->subject,
 		$message->message,
 		$message->date_sent
@@ -199,7 +217,7 @@ function bp_mpm_moderate_before_save(&$message) {
 	// C. Notifications
 	// shall we notify sender that a message was queud for moderation ?
 	$notify_when_queued = get_option(BP_MPM_OPTION_NOTIFY_WHEN_QUEUED);
-	if ($notify_when_queued) {
+	if ($notify_when_queued == 1) {
 		bp_notifications_add_notification(array(
 			'user_id'           => $message->sender_id,
 			'item_id'           => $queued_message_id,
