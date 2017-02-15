@@ -3,6 +3,8 @@
 // Exit if accessed directly.
 defined( 'ABSPATH' ) || exit;
 
+require_once __DIR__ . '/class-bp-moderated-messages-list-table.php';
+
 const BP_MPM_OPTIONS_HIDDEN_VALIDATION_FIELD_NAME = 'BP_MPM_OPTIONS_HIDDEN_VALIDATION_FIELD_NAME';
 
 function bp_mpm_admin_manage_messages_moderation() {
@@ -19,7 +21,7 @@ function bp_mpm_admin_manage_messages_moderation() {
 	);
 
 	// Adds a subpage with the same slug to overwrite default page
-	add_submenu_page(
+	$list_hook = add_submenu_page(
 		'bp-moderate-private-messages',
 		__('Messages awaiting moderation', 'bp-moderate-private-messages'),
 		__('Messages awaiting moderation', 'bp-moderate-private-messages'),
@@ -27,9 +29,9 @@ function bp_mpm_admin_manage_messages_moderation() {
 		'bp-moderate-private-messages',
 		'bp_mpm_moderated_messages_list'
 	);
+	add_action("load-$list_hook", 'bp_mpm_screen_options');
 
 	// Adds an options subpage
-	//$hook = 
 	add_submenu_page(
 		'bp-moderate-private-messages',
 		__('Private messages moderation options', 'bp-moderate-private-messages'),
@@ -42,6 +44,23 @@ function bp_mpm_admin_manage_messages_moderation() {
 add_action('admin_menu', 'bp_mpm_admin_manage_messages_moderation');
 
 /**
+ * Screen options
+ */
+function bp_mpm_screen_options() {
+	global $bp_messages_list_table;
+
+	$option = 'per_page'; // doesn't seem to work, as though it is displayed
+	$args = array(
+		'label'   => 'Messages',
+		'default' => 20,
+		'option'  => 'messages_per_page'
+	);
+	add_screen_option($option, $args);
+
+	$bp_messages_list_table = new BP_Moderated_Messages_List_Table();
+}
+
+/**
  * Depending on the "action" parameter :
  *  - displays a list of messages awaiting moderation (default)
  *  - displays a confirmation form to accept a message (action="accept")
@@ -50,11 +69,19 @@ add_action('admin_menu', 'bp_mpm_admin_manage_messages_moderation');
  *    confirmation form nonce field present)
  */
 function bp_mpm_moderated_messages_list() {
+	global $bp_messages_list_table;
+	global $wpdb;
+
 	// action requested
 	$action = 'list';
 	if (!empty($_REQUEST['action'])) {
 		$action = $_REQUEST['action'];
 	}
+	$bulk_action = $bp_messages_list_table->current_action();
+	if ($bulk_action) {
+		$action = $bulk_action;
+	}
+	
 	// message id
 	$id = false;
 	if (!empty($_REQUEST['id'])) {
@@ -65,13 +92,18 @@ function bp_mpm_moderated_messages_list() {
 		wp_die( __("You don't have permission to access this page") );
 	}
 
-	// common text for moderation operations
-	if ($action == 'accept' || $action == 'reject' || $action == 'doaccept' || $action == 'doreject') {
-		// get moderated message
-		global $wpdb;
-		$message = $wpdb->get_row(
+	// first-step actions requiring confirmation
+	if ($action == 'accept' || $action == 'reject') {
+		// get (multiple) message(s)
+		$ids_clause = '';
+		if (is_array($id)) {
+			$ids_clause = " WHERE id IN (" . implode(',', $id) . ")";
+		} else {
+			$ids_clause = " WHERE id = $id";
+		}
+		$messages = $wpdb->get_results(
 			"SELECT * FROM {$wpdb->prefix}" . BP_MPM_MODERATED_MESSAGES_TABLE_NAME
-			. " WHERE id = $id"
+			. $ids_clause
 			. " AND deleted = 0;"
 		);
 		// display confirmation form
@@ -80,27 +112,94 @@ function bp_mpm_moderated_messages_list() {
 			<h1>
 				<?php
 				if ($action == 'accept') {
-					_e('Accept a message', 'bp-moderate-private-messages');
+					_e('Accept message(s)', 'bp-moderate-private-messages');
 				} elseif ($action == 'reject') {
-					_e('Reject a message', 'bp-moderate-private-messages');
+					_e('Reject message(s)', 'bp-moderate-private-messages');
 				}
 				?>
 			</h1>
 			<?php
+			//var_dump($messages);
 			// called with wrong message id or message already moderated ?
-			if (! $message) {
+			if (! $messages) {
 				_e('Message not found', 'bp-moderate-private-messages');
 				return;
-			}
-			$sender = new WP_User($message->sender_id);
+			} ?>
+			<form method="post" name="moderate-messages" id="moderate-messages">
+				<?php wp_nonce_field('accept_or_reject_message'); ?>
+				<p>
+					<?php
+					_e('You chose to', 'bp-moderate-private-messages');
+					echo ' ';
+					if ($action == 'accept') {
+						_e('accept', 'bp-moderate-private-messages');
+					} elseif ($action == 'reject') {
+						_e('reject', 'bp-moderate-private-messages');
+					}
+					echo ' ';
+					if (is_array($id)) { // multiple messages
+						_e('these messages', 'bp-moderate-private-messages');
+					} else {
+						_e('this message', 'bp-moderate-private-messages');
+					}
+					?> :
+				</p>
+				<ul>
+				<?php
+				// generic loop processing
+				foreach ($messages as $message) {
+					$sender = new WP_User($message->sender_id);
+					// outputs the confirmation form ?>
+					<li>
+						<input name="id[]" value="<?php echo $message->id ?>" type="hidden">
+						<strong>[<?php echo stripslashes($message->subject) ?>]</strong>
+						<?php _e('sent to', 'bp-moderate-private-messages') ?>
+						<strong><?php echo count(explode(',', $message->recipients)) ?></strong>
+						<?php _e('recipients', 'bp-moderate-private-messages') ?>
+						<?php _e('by', 'bp-moderate-private-messages') ?>
+						<i><?php echo $sender->display_name ?></i>
+						(<?php _e('date', 'bp-moderate-private-messages') ?> :
+						<?php echo $message->date_sent ?>)
+					</li>
+				<?php
+				}
+				?>
+				</ul>
+				<input name="action" value="do<?php echo $action ?>" type="hidden">
+				<p class="submit">
+					<input name="submit" id="submit" class="button button-primary" type="submit"
+						value="<?php _e('Confirm this action', 'bp-moderate-private-messages') ?>"
+					>
+				</p>
+			</form>
+		</div>
+	<?php
+	} else { // default action: list messages awaiting moderation
+		$notice_messages = array();
 
-			// do action for real ?
-			if (($action == 'doaccept' || $action == 'doreject') && $id !== false) {
-				check_admin_referer('accept_or_reject_message');
-				// A. Send message (or not) and notifications
-				if ($action == 'doaccept') {
-					// 1. send the message by briefly disabling moderation hook
-					remove_action('messages_message_before_save', 'bp_mpm_moderate_before_save', 10);
+		// do action for real ?
+		if (($action == 'doaccept' || $action == 'doreject')) {
+			check_admin_referer('accept_or_reject_message');
+
+			// get (multiple) message(s)
+			$ids_clause = '';
+			if (is_array($id)) {
+				$ids_clause = " WHERE id IN (" . implode(',', $id) . ")";
+			} else {
+				$ids_clause = " WHERE id = $id";
+			}
+			$messages = $wpdb->get_results(
+				"SELECT * FROM {$wpdb->prefix}" . BP_MPM_MODERATED_MESSAGES_TABLE_NAME
+				. $ids_clause
+				. " AND deleted = 0;"
+			);
+
+			// A. Send message(s) (or not) and notifications
+			if ($action == 'doaccept') {
+				// 1. briefly disable moderation hook to avoid a moderation loop
+				remove_action('messages_message_before_save', 'bp_mpm_moderate_before_save', 10);
+
+				foreach ($messages as $message) {
 					// Send message
 					$args = array(
 						'recipients' => explode(',', $message->recipients),
@@ -110,8 +209,7 @@ function bp_mpm_moderated_messages_list() {
 						'date_sent', $message->date_sent // doesn't seem to work...
 					);
 					$messageId = messages_new_message($args);
-					echo "Message envoyé: ["; var_dump($messageId); echo "]<br>";
-					add_action('messages_message_before_save', 'bp_mpm_moderate_before_save', 10, 1);
+					// TODO test $messageId to check if it was successfully sent
 
 					// 2. notify sender ?
 					$notify_when_accepted = get_option(BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED);
@@ -126,9 +224,14 @@ function bp_mpm_moderated_messages_list() {
 						));
 					}
 				}
-				if ($action == 'doreject') {
+
+				// restore moderation hook
+				add_action('messages_message_before_save', 'bp_mpm_moderate_before_save', 10, 1);
+			}
+			if ($action == 'doreject') {
+				foreach ($messages as $message) {
 					// do nothing with the message
-					// notify sender ?
+					// notify sender(s) ?
 					$notify_when_rejected = get_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED);
 					if ($notify_when_rejected == 1) {
 						bp_notifications_add_notification(array(
@@ -141,76 +244,58 @@ function bp_mpm_moderated_messages_list() {
 						));
 					}
 				}
-				// B. Remove message from moderated messages list
-				// soft delete ?
-				$soft_delete = get_option(BP_MPM_OPTION_SOFT_DELETE);
-				$query = '';
-				if ($soft_delete == 1) {
-					$query .= "UPDATE " . $wpdb->prefix . BP_MPM_MODERATED_MESSAGES_TABLE_NAME . " SET deleted=1";
-				} else {
-					$query .= "DELETE FROM " . $wpdb->prefix . BP_MPM_MODERATED_MESSAGES_TABLE_NAME;
-				}
-				$query .= " WHERE id=%d;";
-				$wpdb->query($wpdb->prepare($query, $message->id));
-				// confirmation message
-				?>
-				<div class="updated">
-					<p>
-						<strong><?php
-							if($action == 'doaccept') {
-								_e('Message accepted and sent succesfully', 'bp-moderate-private-messages');
-							} elseif ($action == 'doreject') {
-								_e('Message rejected succesfully', 'bp-moderate-private-messages');
-							}
-						?></strong>
-					</p>
-				</div>
-				<?php
+			}
+			// B. Remove message(s) from moderated messages list
+			// soft delete ?
+			$soft_delete = get_option(BP_MPM_OPTION_SOFT_DELETE);
+			$query = '';
+			if ($soft_delete == 1) {
+				$query .= "UPDATE " . $wpdb->prefix . BP_MPM_MODERATED_MESSAGES_TABLE_NAME . " SET deleted=1";
+			} else {
+				$query .= "DELETE FROM " . $wpdb->prefix . BP_MPM_MODERATED_MESSAGES_TABLE_NAME;
+			}
+			$query .= $ids_clause;
+			$wpdb->query($query);
 
-			} elseif (($action == 'accept' || $action == 'reject') && $id !== false) {
-				// outputs the confirmation form ?>
-				<form method="post" name="moderate-messages" id="moderate-messages">
-					<?php wp_nonce_field('accept_or_reject_message'); ?>
-					<p>
-						<?php
-						_e('You chose to', 'bp-moderate-private-messages');
-						echo ' ';
-						if ($action == 'accept') {
-							_e('accept', 'bp-moderate-private-messages');
-						} elseif ($action == 'reject') {
-							_e('reject', 'bp-moderate-private-messages');
-						}
-						echo ' ';
-						_e('this message', 'bp-moderate-private-messages');
-						?> :
-					</p>
-					<ul>
-						<li>
-							<input name="id" value="<?php echo $id ?>" type="hidden">
-							<strong>[<?php echo stripslashes($message->subject) ?>]</strong>
-							<?php _e('sent to', 'bp-moderate-private-messages') ?>
-							<strong><?php echo count(explode(',', $message->recipients)) ?></strong>
-							<?php _e('recipients', 'bp-moderate-private-messages') ?>
-							<?php _e('by', 'bp-moderate-private-messages') ?>
-							<i><?php echo $sender->display_name ?></i>
-							(<?php _e('date', 'bp-moderate-private-messages') ?> :
-							<?php echo $message->date_sent ?>)
-						</li>
-					</ul>
-					<input name="action" value="do<?php echo $action ?>" type="hidden">
-					<p class="submit">
-						<input name="submit" id="submit" class="button button-primary" type="submit"
-							value="<?php _e('Confirm this action', 'bp-moderate-private-messages') ?>"
-						>
-					</p>
-				</form>
-				<?php
-			} ?>
-			</div>
-		<?php
-	} else {
-		// default action: list messages awaiting moderation
-		echo "Une liste de messages de guedin !!";
+			// confirmation message
+			if ($action == 'doaccept') {
+				$notice_messages[] = sprintf(__( '%s message(s) accepted successfully', 'bp-moderate-private-messages'), number_format_i18n(count($messages)));
+			} elseif ($action == 'doreject') {
+				$notice_messages[] = sprintf(__( '%s message(s) rejected successfully', 'bp-moderate-private-messages'), number_format_i18n(count($messages)));
+			}
+		}
+
+		// Prepare the group items for display.
+		$bp_messages_list_table->prepare_items();
+		?>
+
+		<div class="wrap">
+			<h1>
+				<?php _e('Messages awaiting moderation', 'bp-moderate-group-creation'); ?>
+
+				<?php if (! empty($_REQUEST['s'])) : ?>
+					<span class="subtitle"><?php printf(__('Search results for &#8220;%s&#8221;', 'buddypress'), wp_html_excerpt(esc_html(stripslashes($_REQUEST['s'])), 50 )); ?></span>
+				<?php endif; ?>
+			</h1>
+
+			<?php // If the user has just made a change to a message, display the status messages ?>
+			<?php if (! empty($notice_messages)) : ?>
+				<div id="moderated" class="<?php echo (! empty($_REQUEST['error'])) ? 'error' : 'updated'; ?>"><p><?php echo implode("<br/>\n", $notice_messages); ?></p></div>
+			<?php endif; ?>
+
+			<?php //$bp_messages_list_table->views(); ?>
+
+			<form id="bp-groups-form" action="" method="get">
+				<?php $bp_messages_list_table->search_box(__('Search messages awaiting moderation', 'bp-moderate-private-messages'), 'bp-messages'); ?>
+				<input type="hidden" name="page" value="bp-moderate-private-messages" />
+			</form>
+			<form id="bp-groups-form" action="" method="get">
+				<?php $bp_messages_list_table->display(); ?>
+				<input type="hidden" name="page" value="bp-moderate-private-messages" />
+			</form>
+		</div>
+
+	<?php
 	}
 }
 
