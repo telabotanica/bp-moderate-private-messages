@@ -90,8 +90,8 @@ class BP_Moderated_Messages_List_Table extends WP_List_Table {
 		$accept_link = admin_url() . 'admin.php?page=bp-moderate-private-messages&id=' . $item['id'] . '&action=accept';
 		$reject_link = admin_url() . 'admin.php?page=bp-moderate-private-messages&id=' . $item['id'] . '&action=reject';
 		$actions = array(
-			'accept' => '<span class="activate"><a href="' . $accept_link . '">Accept</a></span>',
-			'reject' => '<span class="delete"><a href="' . $reject_link . '">Reject</a></span>'
+			'accept' => '<span class="activate"><a href="' . $accept_link . '">' . __('Accept', 'bp-moderate-private-messages') . '</a></span>',
+			'reject' => '<span class="delete"><a href="' . $reject_link . '">' . __('Reject', 'bp-moderate-private-messages') . '</a></span>'
 		);
 
 		return $title . $this->row_actions($actions);
@@ -169,8 +169,8 @@ class BP_Moderated_Messages_List_Table extends WP_List_Table {
 	 */
 	public function get_bulk_actions() {
 		$actions = array(
-			'accept' => 'Accept',
-			'reject' => 'Reject'
+			'accept' => __('Accept', 'bp-moderate-private-messages'),
+			'reject' => __('Reject', 'bp-moderate-private-messages')
 		);
 		return $actions;
 	}

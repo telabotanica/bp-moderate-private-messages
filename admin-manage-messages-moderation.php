@@ -51,7 +51,7 @@ function bp_mpm_screen_options() {
 
 	$option = 'per_page'; // doesn't seem to work, as though it is displayed
 	$args = array(
-		'label'   => 'Messages',
+		'label'   => __('Messages', 'bp-moderate-private-messages'),
 		'default' => 20,
 		'option'  => 'messages_per_page'
 	);
@@ -271,7 +271,7 @@ function bp_mpm_moderated_messages_list() {
 
 		<div class="wrap">
 			<h1>
-				<?php _e('Messages awaiting moderation', 'bp-moderate-group-creation'); ?>
+				<?php _e('Messages awaiting moderation', 'bp-moderate-private-messages'); ?>
 
 				<?php if (! empty($_REQUEST['s'])) : ?>
 					<span class="subtitle"><?php printf(__('Search results for &#8220;%s&#8221;', 'buddypress'), wp_html_excerpt(esc_html(stripslashes($_REQUEST['s'])), 50 )); ?></span>
@@ -312,7 +312,13 @@ function bp_mpm_moderated_messages_options() {
 		update_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED, (isset($_POST[BP_MPM_OPTION_NOTIFY_WHEN_REJECTED]) ? '1' : '0'));
 		update_option(BP_MPM_OPTION_SOFT_DELETE, (isset($_POST[BP_MPM_OPTION_SOFT_DELETE]) ? '1' : '0'));
 		?>
-		<div class="updated"><p><strong>Options mises à jour</strong></p></div>
+		<div class="updated">
+			<p>
+				<strong>
+					<?php _e('Options updated', 'bp-moderate-private-messages') ?>
+				</strong>
+			</p>
+		</div>
 		<?php
 	}
 
@@ -373,7 +379,7 @@ function bp_mpm_moderated_messages_options() {
 									name="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_QUEUED ?>"
 									<?php echo $notify_when_queued ? ' checked="checked"' : '' ?>
 								/>
-								Notify when queued
+								<?php _e('Notify when queued', 'bp-moderate-private-messages') ?>
 							</label>
 							<p class="description">
 								<?php _e('Notify the sender when a message was queued for moderation', 'bp-moderate-private-messages') ?>
@@ -385,7 +391,7 @@ function bp_mpm_moderated_messages_options() {
 									name="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED ?>"
 									<?php echo $notify_when_accepted ? ' checked="checked"' : '' ?>
 								/>
-								Notify when accepted
+								<?php _e('Notify when accepted', 'bp-moderate-private-messages') ?>
 							</label>
 							<p class="description">
 								<?php _e('Notify the sender when a message was accpeted', 'bp-moderate-private-messages') ?>
@@ -397,7 +403,7 @@ function bp_mpm_moderated_messages_options() {
 									name="<?php echo BP_MPM_OPTION_NOTIFY_WHEN_REJECTED ?>"
 									<?php echo $notify_when_rejected ? ' checked="checked"' : '' ?>
 								/>
-								Notify when rejected
+								<?php _e('Notify when rejected', 'bp-moderate-private-messages') ?>
 							</label>
 							<p class="description">
 								<?php _e('Notify the sender when a message was rejected', 'bp-moderate-private-messages') ?>
