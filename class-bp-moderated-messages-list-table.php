@@ -57,11 +57,21 @@ class BP_Moderated_Messages_List_Table extends WP_List_Table {
 	 *
 	 * @return null|string
 	 */
-	public static function record_count() {
+	public static function record_count($search=null) {
 		global $wpdb;
 
 		$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}" . BP_MPM_MODERATED_MESSAGES_TABLE_NAME
 			. " WHERE deleted=0";
+
+		// search
+		if ($search !== null) {
+			$search_like = esc_sql('%' . $search . '%');
+			$clauses = array(
+				"subject LIKE '$search_like'",
+				"message LIKE '$search_like'"
+			);
+			$sql .= " AND (" . implode(' OR ', $clauses) . ")";
+		}
 
 		return $wpdb->get_var($sql);
 	}
@@ -182,19 +192,20 @@ class BP_Moderated_Messages_List_Table extends WP_List_Table {
 
 		$this->_column_headers = $this->get_column_info();
 
-		$per_page     = $this->get_items_per_page('messages_per_page', 20);
-		$current_page = $this->get_pagenum();
-		$total_items  = self::record_count();
-
-		$this->set_pagination_args(array(
-			'total_items' => $total_items,
-			'per_page'    => $per_page
-		));
 		// optional search term
 		$search = null;
 		if (! empty($_REQUEST['s'])) {
 			$search = $_REQUEST['s'];
 		}
+
+		$per_page     = $this->get_items_per_page('messages_per_page', 20);
+		$current_page = $this->get_pagenum();
+		$total_items  = self::record_count($search);
+
+		$this->set_pagination_args(array(
+			'total_items' => $total_items,
+			'per_page'    => $per_page
+		));
 
 		$this->items = self::get_moderated_messages($per_page, $current_page, $search);
 	}
