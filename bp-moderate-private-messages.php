@@ -20,6 +20,8 @@ const BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED = 'bp_mpm_notify_when_accepted';
 const BP_MPM_OPTION_NOTIFY_WHEN_REJECTED = 'bp_mpm_notify_when_rejected';
 const BP_MPM_OPTION_SOFT_DELETE = 'bp_mpm_soft_delete';
 const BP_MPM_MODERATED_MESSAGES_TABLE_NAME = 'bp_messages_moderated';
+const BP_MPM_MESSAGES_META_TABLE_NAME = 'bp_messages_meta';
+const BP_MPM_ALREADY_SENT_META_NAME = 'already_sent_to_users';
 const BP_MPM_DEFAULT_RECIPIENTS_LIMIT = 10;
 
 
@@ -158,6 +160,13 @@ function bp_mpm_moderate_before_save(&$message) {
 		$message->date_sent
 	));
 	$queued_message_id = $wpdb->insert_id;
+
+	// insert meta
+	$wpdb->query($wpdb->prepare(
+		"INSERT INTO {$wpdb->prefix}" . BP_MPM_MESSAGES_META_TABLE_NAME . " VALUES(DEFAULT, %d, %s, '');",
+		($message->thread_id ? $message->thread_id : "''"),
+		BP_MPM_ALREADY_SENT_META_NAME
+	));
 
 	// B. Modify current message and send it to all superadmins
 	// 1. add an explicit prefix to the subject
