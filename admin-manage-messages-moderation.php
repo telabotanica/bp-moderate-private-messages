@@ -154,7 +154,7 @@ function bp_mpm_moderated_messages_list() {
 						<input name="id[]" value="<?php echo $message->id ?>" type="hidden">
 						<strong>[<?php echo stripslashes($message->subject) ?>]</strong>
 						<?php _e('sent to', 'bp-moderate-private-messages') ?>
-						<strong><?php echo count(explode(',', $message->recipients)) ?></strong>
+						<strong><?php echo BP_Moderated_Messages_List_Table::format_recipients_count($message->id, $message->recipients) ?></strong>
 						<?php _e('recipients', 'bp-moderate-private-messages') ?>
 						<?php _e('by', 'bp-moderate-private-messages') ?>
 						<i><?php echo $sender->display_name ?></i>
@@ -196,23 +196,58 @@ function bp_mpm_moderated_messages_list() {
 
 			// A. Send message(s) (or not) and notifications
 			if ($action == 'doaccept') {
-				// 1. briefly disable moderation hook to avoid a moderation loop
+				// briefly disable moderation hook to avoid a moderation loop
 				remove_action('messages_message_before_save', 'bp_mpm_moderate_before_save', 10);
 
-				foreach ($messages as $message) {
-					// Send message
-					$args = array(
-						'recipients' => explode(',', $message->recipients),
-						'subject' => $message->subject,
-						'content' => $message->message,
-						'sender_id' => $message->sender_id,
-						'date_sent', $message->date_sent // doesn't seem to work...
-					);
-					$messageId = messages_new_message($args);
-					// TODO test $messageId to check if it was successfully sent
+				// prepare query for message deletion
+				$soft_delete = get_option(BP_MPM_OPTION_SOFT_DELETE);
+				$delete_message_query = '';
+				if ($soft_delete == 1) {
+					$delete_message_query .= "UPDATE " . $wpdb->prefix . BP_MPM_MODERATED_MESSAGES_TABLE_NAME . " SET deleted=1";
+				} else {
+					$delete_message_query .= "DELETE FROM " . $wpdb->prefix . BP_MPM_MODERATED_MESSAGES_TABLE_NAME;
+				}
 
-					// 2. notify sender ?
-					$notify_when_accepted = get_option(BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED);
+				// prepare query for recipient deletion
+				$delete_recipient_query = "UPDATE {$wpdb->prefix}" . BP_MPM_MESSAGES_META_TABLE_NAME
+					. " SET meta_value= concat(ifnull(meta_value, ''), '%s') WHERE message_id = %s AND meta_key = '"
+					. BP_MPM_ALREADY_SENT_META_NAME ."'"
+				;
+
+				$notify_when_accepted = get_option(BP_MPM_OPTION_NOTIFY_WHEN_ACCEPTED);
+				foreach ($messages as $message) {
+					// get already sent user id
+					$already_sent_users = $wpdb->get_results(
+						"SELECT meta_value FROM {$wpdb->prefix}" . BP_MPM_MESSAGES_META_TABLE_NAME
+						. " WHERE message_id = {$message->id} AND meta_key = '" . BP_MPM_ALREADY_SENT_META_NAME . "'"
+					);
+					// remove already sent user id from recipients list
+					$recipients = array_diff(
+						explode(',',$message->recipients),
+						explode(',',$already_sent_users[0]->meta_value)
+					);
+
+					foreach ($recipients as $recipient) {
+						// Send message
+						$args = array(
+							'recipients' => $recipient,
+							'subject' => $message->subject,
+							'content' => $message->message,
+							'sender_id' => $message->sender_id,
+							'date_sent', $message->date_sent // doesn't seem to work...
+						);
+						$messageId = messages_new_message($args);
+						// TODO test $messageId to check if it was successfully sent
+
+						// Remove recipient
+						$remove_recipient_query = sprintf($delete_recipient_query, ',' . $recipient, $message->id);
+						$wpdb->query($remove_recipient_query);
+					}
+
+					// Remove sent message from DB
+					$wpdb->query($delete_message_query . " WHERE id = $message->id");
+
+					// notify sender ?
 					if ($notify_when_accepted == 1) {
 						bp_notifications_add_notification(array(
 							'user_id'           => $message->sender_id,
@@ -229,10 +264,11 @@ function bp_mpm_moderated_messages_list() {
 				add_action('messages_message_before_save', 'bp_mpm_moderate_before_save', 10, 1);
 			}
 			if ($action == 'doreject') {
+				$notify_when_rejected = get_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED);
 				foreach ($messages as $message) {
 					// do nothing with the message
+
 					// notify sender(s) ?
-					$notify_when_rejected = get_option(BP_MPM_OPTION_NOTIFY_WHEN_REJECTED);
 					if ($notify_when_rejected == 1) {
 						bp_notifications_add_notification(array(
 							'user_id'           => $message->sender_id,
