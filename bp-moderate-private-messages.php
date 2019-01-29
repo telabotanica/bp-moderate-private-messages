@@ -66,7 +66,7 @@ function bp_mpm_init_db() {
 			`id` bigint(20) NOT NULL AUTO_INCREMENT,
 			`thread_id` bigint(20) NOT NULL,
 			`sender_id` bigint(20) NOT NULL,
-			`recipients` text NOT NULL,
+			`recipients` longtext NOT NULL,
 			`subject` varchar(200) NOT NULL,
 			`message` longtext NOT NULL,
 			`date_sent` datetime NOT NULL,
