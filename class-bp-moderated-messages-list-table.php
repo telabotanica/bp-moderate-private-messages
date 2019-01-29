@@ -118,7 +118,7 @@ class BP_Moderated_Messages_List_Table extends WP_List_Table {
 			case 'sender_id':
 				return bp_core_get_userlink($item[$column_name]);
 			case 'recipients':
-				return count(explode(',', $item[$column_name]));
+				return self::format_recipients_count($item['id'], $item['recipients']);
 			case 'message':
 				$message_excerpt = stripslashes($item[$column_name]);
 				if (strlen($message_excerpt) > 150) {
@@ -208,5 +208,38 @@ class BP_Moderated_Messages_List_Table extends WP_List_Table {
 		));
 
 		$this->items = self::get_moderated_messages($per_page, $current_page, $search);
+	}
+
+	/**
+	 * Return recipients count formated string
+	 *
+	 * In case of already sent recipients then return remaining recipients count
+	 * against total count
+	 *
+	 * Format:
+	 * [int]: total
+	 * or
+	 * [string]: remaining/total
+	 *
+	 * @param      string   $message_id  The message id
+	 * @param      string   $recipients  The recipients list (integers separated by commas)
+	 *
+	 * @return     Mixed  	int or string (see above)
+	 */
+	static function format_recipients_count($message_id, $recipients) {
+		global $wpdb;
+
+		// check for already sent recipients
+		$already_sent_users = $wpdb->get_results(
+			"SELECT meta_value FROM {$wpdb->prefix}" . BP_MPM_MESSAGES_META_TABLE_NAME
+			. " WHERE message_id = $message_id AND meta_key = '" . BP_MPM_ALREADY_SENT_META_NAME . "'"
+		);
+
+		if (strlen($already_sent_users[0]->meta_value)) {
+			$count = count(explode(',', $recipients));
+			return ($count - count(explode(',', $already_sent_users[0]->meta_value))) . '/' . $count;
+		} else {
+			return count(explode(',', $recipients));
+		}
 	}
 }

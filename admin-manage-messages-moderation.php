@@ -154,7 +154,7 @@ function bp_mpm_moderated_messages_list() {
 						<input name="id[]" value="<?php echo $message->id ?>" type="hidden">
 						<strong>[<?php echo stripslashes($message->subject) ?>]</strong>
 						<?php _e('sent to', 'bp-moderate-private-messages') ?>
-						<strong><?php echo count(explode(',', $message->recipients)) ?></strong>
+						<strong><?php echo BP_Moderated_Messages_List_Table::format_recipients_count($message->id, $message->recipients) ?></strong>
 						<?php _e('recipients', 'bp-moderate-private-messages') ?>
 						<?php _e('by', 'bp-moderate-private-messages') ?>
 						<i><?php echo $sender->display_name ?></i>
