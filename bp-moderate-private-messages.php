@@ -164,7 +164,7 @@ function bp_mpm_moderate_before_save(&$message) {
 	// insert meta
 	$wpdb->query($wpdb->prepare(
 		"INSERT INTO {$wpdb->prefix}" . BP_MPM_MESSAGES_META_TABLE_NAME . " VALUES(DEFAULT, %d, %s, '');",
-		($message->thread_id ? $message->thread_id : "''"),
+		$queued_message_id,
 		BP_MPM_ALREADY_SENT_META_NAME
 	));
 
